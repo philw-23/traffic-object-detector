@@ -15,7 +15,6 @@ class TrafficDetectorDataset(Dataset):
         image = Image.open(image_path) # Open image
         original_size = image.size
         image = self.resize_image(image) # Resize image preserving aspect ration
-        # image = np.asarray(image) # Convert to numpy array to feed into transforms
     
         # Get applicable items in image
         image_boxes = self.image_frame.loc[self.image_frame['f_path'] == image_path]
@@ -31,6 +30,7 @@ class TrafficDetectorDataset(Dataset):
             xmin, ymin, xmax, ymax = self.adjust_bounding_box(xmin, ymin, 
                                                               xmax, ymax, 
                                                               original_size) # Adjust bbox
+    
             bboxes.append([xmin, ymin, xmax, ymax]) # Append new coordinates
             labels.append(row['label_id']) # Append label
             

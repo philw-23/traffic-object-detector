@@ -4,8 +4,9 @@ import random
 import pandas as pd
 import os
 from torch.utils.data import DataLoader
+from models import * # Model/optimizer info
 from TrafficDetectorDatasets import * # Custom defined classes
-from support import *
+from support import * # Support functions
 
 # %% Extract Data
 # Check if extract already exists before extracting
@@ -46,3 +47,31 @@ trainloader = DataLoader(train_dataset, batch_size=2, shuffle=True,
                          collate_fn=train_dataset.collate_fn)
 testloader = DataLoader(test_dataset, batch_size=2, shuffle=False,
                          collate_fn=test_dataset.collate_fn)
+
+# %% Train
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model, optimizer, lr_scheduler = get_model_items('retinanet', num_classes + 1, 1, 'SGD')
+model.to(device) # Send model to device
+num_epochs = 10
+train_losses = []
+val_losses = []
+model_metrics = []
+
+# Execute
+for e in range(num_epochs):
+    # Train
+    epoch_train_loss = train_one_epoch(model, optimizer, trainloader, device)
+    train_losses.append(epoch_train_loss) # Log train loss
+
+    # Evaluate
+    epoch_val_loss, epoch_metrics = evaluate_one_epoch(model, optimizer, testloader, device)
+    val_losses.append(epoch_val_loss) # Log val loss
+    model_metrics.append(epoch_metrics) # Log epoch metrics
+
+    # Step scheduler if applicable
+    if lr_scheduler:
+        lr_scheduler.step(epoch_val_loss)
+
+    # Print epoch results
+    print(epoch_train_loss, epoch_val_loss, model_metrics)
+

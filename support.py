@@ -39,10 +39,12 @@ def train_one_epoch(model, optimizer, trainloader, device):
 		batch_loss.backward()
 		optimizer.step()
 
+		break
+
 	epoch_loss = train_loss / len(trainloader) # Estimate epoch loss
 	return epoch_loss
 
-def evaluate(model, optimizer, testloader, device):
+def evaluate_one_epoch(model, optimizer, testloader, device):
 	metric = MeanAveragePrecision() # Will define map metric here
 	val_loss = 0 # Total loss for epoch
 	with torch.no_grad(): # No updates in evaluation
@@ -51,7 +53,7 @@ def evaluate(model, optimizer, testloader, device):
 			model.train()
 			images = [image.to(device) for image in images]
 			targets = [{'boxes':boxes[i].to(device), 'labels':labels[i].to(device)} 
-						for i in len(boxes)]
+						for i in range(len(boxes))]
 			losses = model(images, targets) # Model returns dictionary of losses!
 			val_loss += sum(loss for loss in losses.values())
 			# Potentially calculate other metrics (accuracy, etc.)
@@ -59,7 +61,9 @@ def evaluate(model, optimizer, testloader, device):
 			#### VAL PASS - for evaluating and calculating metrics ####
 			model.eval()
 			val_outputs = model(images) # Returns predictions in eval mode
-			metric.update(targets, val_outputs) # will update map
+			metric.update(val_outputs, targets) # will update map
+
+			break
 
 	eval_results = metric.compute() # Calculate metrics after completing all batches
 	epoch_loss = val_loss / len(testloader) # Estimate epoch loss
