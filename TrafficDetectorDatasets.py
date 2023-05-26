@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 
@@ -14,6 +15,7 @@ class TrafficDetectorDataset(Dataset):
         image = Image.open(image_path) # Open image
         original_size = image.size
         image = self.resize_image(image) # Resize image preserving aspect ration
+        # image = np.asarray(image) # Convert to numpy array to feed into transforms
     
         # Get applicable items in image
         image_boxes = self.image_frame.loc[self.image_frame['f_path'] == image_path]
@@ -38,7 +40,7 @@ class TrafficDetectorDataset(Dataset):
         
         # Apply transforms
         if self.transforms:
-            image, boxes, labels = self.transforms(image, boxes, labels)
+            image, boxes = self.transforms(image, boxes)
         
         return image, boxes, labels
     

@@ -1,6 +1,20 @@
 import torch
+import transforms as T
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
+# Gets transformations to apply to images/targets
+def get_transforms(train):
+	transforms = []
+	transforms.append(T.PILToTensor())
+	transforms.append(T.ConvertImageDtype(torch.float))
+	if train:
+		transforms.append(T.RandomHorizontalFlip(0.5))
+	transforms.append(T.Normalize(
+		[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+	))
+	
+	return T.Compose(transforms)
+	
 # Train a single epoch - currently pseudocode but will be updated!
 def train_one_epoch(model, optimizer, trainloader, device):
 	# Set model to train mode
@@ -29,7 +43,7 @@ def train_one_epoch(model, optimizer, trainloader, device):
 	return epoch_loss
 
 def evaluate(model, optimizer, testloader, device):
-	metric = None # Will define map metric here (https://torchmetrics.readthedocs.io/en/stable/detection/mean_average_precision.html)
+	metric = MeanAveragePrecision() # Will define map metric here
 	val_loss = 0 # Total loss for epoch
 	with torch.no_grad(): # No updates in evaluation
 		for images, boxes, labels in testloader:
@@ -45,13 +59,12 @@ def evaluate(model, optimizer, testloader, device):
 			#### VAL PASS - for evaluating and calculating metrics ####
 			model.eval()
 			val_outputs = model(images) # Returns predictions in eval mode
-			# metric.update(target, predictions) # will update map
+			metric.update(targets, val_outputs) # will update map
 
-		# eval_results = metric.compute() # Calculate metrics after completing all batches
-
+	eval_results = metric.compute() # Calculate metrics after completing all batches
 	epoch_loss = val_loss / len(testloader) # Estimate epoch loss
 
-	return epoch_loss #, eval_results
+	return epoch_loss, eval_results
 
 
 
