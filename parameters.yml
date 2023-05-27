@@ -1,0 +1,19 @@
+########## MODEL PARAMETERS #############
+MODEL: 'FasterRCNN' # Valid values: RetinaNet, SSD, FasterRCNN
+BACKBONE_SUB: True # Indicates whether backbone is being substituted
+BACKBONE_OUT_CHANNELS: 2048 # Number of out channels in backbone (required if substituting, ignored if BACKBONE_SUB=False)
+BACKBONE: 'resnet101' # Valid values: resnet101, resnet150, 'None' (required if substituting, ignored if BACKBONE_SUB=False)
+OPTIMIZER: 'adam' # Valid values: sgd, adam
+
+######### DATA PARAMETERS ##############
+# Note: currently data assumed to be provided as a tarfile
+TGT_SIZE: # Target resize for images
+  - 450
+  - 300
+PCT_TRAIN: 0.85 # Percent of data to use for training
+TARFILE: './traffic-dataset.tar.gz'
+EXPORT_PATH: './extracted_data/traffic_dataset/' # Location to extract data to
+LABEL_FILE: 'labels.csv'
+
+######### TRAINING_PARAMETERS ############
+NUM_EPOCHS: 1 # Number of training epochs
