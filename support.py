@@ -1,4 +1,8 @@
 import torch
+import pandas as pd
+import tarfile
+import random
+import os
 import transforms as T
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
@@ -70,6 +74,38 @@ def evaluate_one_epoch(model, optimizer, testloader, device):
 
 	return epoch_loss, eval_results
 
+# Function for extracting data to local directory for use
+# Function assumes labels in csv format in extracted data folder
+# NOTE: currently function is fixed with this dataset, would like to update that in the future
+def extract_data(export_path, dataset_tarfile, label_file_name, train_pct=0.8):
 
+	if not os.path.exists(export_path) or len(os.listdir(export_path)) == 0:
+		tar = tarfile.open(dataset_tarfile)
+		for member in tar.getmembers():
+			if member.isfile(): # Skip non file items
+				member.name = os.path.basename(member.name) # Remove path
+				tar.extract(member, export_path)
+		# f = tarfile.open(dataset_tarfile) # Open file
+		# f.extractall(export_path) # Extract to extract location
 
+	# Read in and preprocess data
+	image_data = pd.read_csv(export_path + label_file_name, sep=' ',
+                    names=['frame', 'xmin', 'ymin', 'xmax', 'ymax', 'occluded', 'label', 'light_type'])
+	image_data['f_path'] = export_path + image_data['frame'] # Add full file path
+	image_data['light_type'] = image_data['light_type'].fillna('No Attribute') # Treat light color/type as attribute
+	image_data['attribute'] = pd.factorize(image_data['light_type'])[0] # Numeric ID for light type (ignoring for now)
+	image_data['image_id'] = pd.factorize(image_data['frame'])[0] # Unique ID for frame (accessing "codes" object)
+	image_data['label_id'] = pd.factorize(image_data['label'])[0] # Unique ID for full label (accessing "codes" object)
+	label_mapper = dict(zip(image_data['label'], image_data['label_id'])) # For mapping use later
+	num_classes = len(image_data['label'].unique())
 
+	# Generate dataframes
+	file_list = image_data['f_path'].unique().tolist() # Unique image list
+	train_len = int(train_pct * len(file_list)) # Number of training images
+	random.Random(1).shuffle(file_list) # Shuffle the list
+	train_files = file_list[:train_len] # Train files
+	test_files = file_list[train_len:] # Test files
+	train_frame = image_data.loc[image_data['f_path'].isin(train_files)] # Train df
+	test_frame = image_data.loc[image_data['f_path'].isin(test_files)] # Test df
+
+	return train_frame, test_frame, label_mapper, num_classes
