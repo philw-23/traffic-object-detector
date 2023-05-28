@@ -1,7 +1,10 @@
+from typing import Any
 import torch
+import pytorch_lightning as pl
 from torchvision.models import get_model
 from torchvision.models.detection import RetinaNet, FasterRCNN
 from torchvision.models.detection.rpn import AnchorGenerator
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 base_models = {
     'RetinaNet':'retinanet_resnet50_fpn_v2',
@@ -9,6 +12,47 @@ base_models = {
     'FasterRCNN':'fasterrcnn_resnet50_fpn_v2'
 }
 
+class LightningModel(pl.LightningModule):
+    def __init__(self, model, optimizer):
+        super().__init__()
+        self.model = model
+        self.optimizer = optimizer
+        self.map_metric = MeanAveragePrecision()
+
+    def forward(self, x):
+        return self.model(x)
+    
+    def training_step(self, batch, batch_idx):
+        images, boxes, labels = batch
+        images = [image for image in images]
+        targets = [{'boxes':boxes[i], 'labels':labels[i]} for i in range(len(labels))]
+        loss_dict = self.model(images, targets)
+        losses = sum(loss for loss in loss_dict.values())
+        self.log('train_loss', losses, on_step=False, on_epoch=True) # Log loss on epoch end
+        return losses
+    
+    def validation_step(self, batch, batch_idx):
+        # Set to train to calcualte loss
+        self.model.train()
+        images, boxes, labels = batch
+        images = [image for image in images]
+        targets = [{'boxes':boxes[i], 'labels':labels[i]} for i in range(len(labels))]
+        loss_dict = self.model(images, targets)
+        losses = sum(loss for loss in loss_dict.values())
+        self.log('val_loss', losses)
+
+        # Evaluate
+        self.model.eval()
+        val_outputs = self.model(images)
+        self.map_metric(val_outputs, targets)
+
+    def on_validation_epoch_end(self):
+        metrics = self.map_metric.compute()
+        for k, v in metrics.items():
+            self.log(k, v.item())
+
+    def configure_optimizers(self) -> Any:
+        return self.optimizer
 
 def get_model_items(model_id, num_classes, optimizer, trainable_backbone_layers=1, 
                     sub_backbone=False, backbone_id=None, backbone_out_channels=None):

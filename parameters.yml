@@ -17,3 +17,4 @@ LABEL_FILE: 'labels.csv'
 
 ######### TRAINING_PARAMETERS ############
 NUM_EPOCHS: 1 # Number of training epochs
+BASE_TRAIN_LOC: './MODEL_TRAINING' # Location to store model info and checkpoints

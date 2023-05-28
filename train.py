@@ -4,6 +4,8 @@ from torch.utils.data import DataLoader
 from models import * # Model/optimizer info
 from TrafficDetectorDatasets import * # Custom defined classes
 from support import * # Support functions
+from pytorch_lightning import Trainer, loggers
+from datetime import datetime
 
 # %% Read in parameters
 with open('./parameters.yml', 'r') as f:
@@ -50,28 +52,13 @@ model, optimizer, lr_scheduler = get_model_items(MODEL, num_classes + 1, OPTIMIZ
                                                  sub_backbone=BACKBONE_SUB,
                                                  backbone_id =BACKBONE,
                                                  backbone_out_channels=BACKBONE_OUT_CHANNELS)
-model.to(device) # Send model to device
 
-# Performance tracking
-train_losses = []
-val_losses = []
-model_metrics = []
+# Define lightning model, trainer, csv logger
+current_time = datetime.strftime('%Y-%m-%d %H-%M-%S')
+logfile_name = MODEL + '_' + BACKBONE + '_' + current_time
+csv_logger = loggers.CSVLogger('model_logs', logfile_name)
+final_model = LightningModel(model, optimizer)
+trainer = Trainer(max_epochs=1)
 
-# Execute
-for e in range(NUM_EPOCHS):
-    # Train
-    epoch_train_loss = train_one_epoch(model, optimizer, trainloader, device)
-    train_losses.append(epoch_train_loss) # Log train loss
-
-    # Evaluate
-    epoch_val_loss, epoch_metrics = evaluate_one_epoch(model, optimizer, testloader, device)
-    val_losses.append(epoch_val_loss) # Log val loss
-    model_metrics.append(epoch_metrics) # Log epoch metrics
-
-    # Step scheduler if applicable
-    if lr_scheduler:
-        lr_scheduler.step(epoch_val_loss)
-
-    # Print epoch results
-    print(epoch_train_loss, epoch_val_loss, model_metrics)
-
+# Train using lightning model
+trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader)
