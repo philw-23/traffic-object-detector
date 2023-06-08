@@ -1,10 +1,13 @@
 # %% Load Packages
 import yaml
+import os
+import shutil
 from torch.utils.data import DataLoader
 from models import * # Model/optimizer info
 from TrafficDetectorDatasets import * # Custom defined classes
 from support import * # Support functions
 from pytorch_lightning import Trainer, loggers
+from pytorch_lightning.callbacks import ModelCheckpoint
 from datetime import datetime
 
 # %% Read in parameters
@@ -29,6 +32,7 @@ LABEL_FILE = parameters['LABEL_FILE']
 
 # Training parameters
 NUM_EPOCHS = parameters['NUM_EPOCHS']
+BASE_TRAIN_LOC = parameters['BASE_TRAIN_LOC']
 
 
 # %% Extract Data
@@ -53,12 +57,26 @@ model, optimizer, lr_scheduler = get_model_items(MODEL, num_classes + 1, OPTIMIZ
                                                  backbone_id =BACKBONE,
                                                  backbone_out_channels=BACKBONE_OUT_CHANNELS)
 
-# Define lightning model, trainer, csv logger
-current_time = datetime.strftime('%Y-%m-%d %H-%M-%S')
-logfile_name = MODEL + '_' + BACKBONE + '_' + current_time
-csv_logger = loggers.CSVLogger('model_logs', logfile_name)
+# Set location for writing outputs
+current_time = datetime.now().strftime('%Y-%m-%d %H-%M-%S')
+location_name = BASE_TRAIN_LOC + '/' + MODEL + '_' + BACKBONE + '_' + current_time
+if not os.path.exists(location_name): # Create directory if it doesn't exist
+    os.makedirs(location_name)
+    shutil.copy('./parameters.yml', location_name + '/' + 'parameters.yml')
+
+# Define lightning model, trainer, csv logger, callback
+checkpoint_log = ModelCheckpoint( # Log best model
+    monitor='val_loss', # Monitor validation loss
+    dirpath=location_name, # Location to write checkpoint
+    filename='best-model-epoch{epoch:02d}-' + MODEL + '-' + BACKBONE,
+    save_top_k=1, # Only save best model
+    mode='min'
+)
+csv_logger = loggers.CSVLogger(location_name, 'log_file')
 final_model = LightningModel(model, optimizer)
-trainer = Trainer(max_epochs=1)
+trainer = Trainer(max_epochs=1,
+                  logger=csv_logger,
+                  callbacks=[checkpoint_log])
 
 # Train using lightning model
 trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader)
