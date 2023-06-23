@@ -2,12 +2,13 @@
 import yaml
 import os
 import shutil
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from models import * # Model/optimizer info
 from TrafficDetectorDatasets import * # Custom defined classes
 from support import * # Support functions
 from pytorch_lightning import Trainer, loggers
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from datetime import datetime
 
 # %% Read in parameters
@@ -38,13 +39,31 @@ BASE_TRAIN_LOC = parameters['BASE_TRAIN_LOC']
 # %% Extract Data
 train_frame, test_frame, label_mapper, num_classes = extract_data(EXPORT_PATH, TARFILE,
                                                                   LABEL_FILE, PCT_TRAIN)
+
+# %% Generate Weights for train set sampling
+# Get class frequencies
+class_frequencies = train_frame['label_id'].value_counts()
+
+# Calculate weight for each image
+sample_weights = []
+for image in train_frame['frame'].unique():
+    image_classes = train_frame[train_frame['frame'] == image]['label_id'].unique() # Classes in image
+    image_weight = 1.0 / np.sqrt(np.min([class_frequencies[c] for c in image_classes])) # Normalized min of class weights
+    sample_weights.append(image_weight) # Append weight for image
     
+# Convert to numpy array    
+sample_weights = np.array(sample_weights) # Need numpy array
+
+# Generate sampler
+image_sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights),
+                                      replacement=True)
+
 # %% Generate/save datasets
 train_dataset = TrafficDetectorDataset(train_frame, TGT_SIZE, get_transforms(True))
 test_dataset = TrafficDetectorDataset(test_frame, TGT_SIZE, get_transforms(False))
 
 # %% Create Dataloaders
-trainloader = DataLoader(train_dataset, batch_size=1, shuffle=True, 
+trainloader = DataLoader(train_dataset, batch_size=1, sampler=image_sampler,
                          collate_fn=train_dataset.collate_fn)
 testloader = DataLoader(test_dataset, batch_size=1, shuffle=False,
                          collate_fn=test_dataset.collate_fn)
@@ -64,7 +83,7 @@ if not os.path.exists(location_name): # Create directory if it doesn't exist
     os.makedirs(location_name)
     shutil.copy('./parameters.yml', location_name + '/' + 'parameters.yml')
 
-# Define lightning model, trainer, csv logger, callback
+# %% Define model and callbacks
 checkpoint_log = ModelCheckpoint( # Log best model
     monitor='val_loss', # Monitor validation loss
     dirpath=location_name, # Location to write checkpoint
@@ -72,11 +91,16 @@ checkpoint_log = ModelCheckpoint( # Log best model
     save_top_k=1, # Only save best model
     mode='min'
 )
+early_stopper = EarlyStopping( # To prevent overfitting
+    monitor='val_loss', # Monitor val loss
+    mode='min',
+    patience=3 # Three epochs of patience
+)
 csv_logger = loggers.CSVLogger(location_name, 'log_file')
 final_model = LightningModel(model, optimizer)
+
+# %% Define trainer and train model
 trainer = Trainer(max_epochs=1,
                   logger=csv_logger,
-                  callbacks=[checkpoint_log])
-
-# Train using lightning model
+                  callbacks=[checkpoint_log, early_stopper])
 trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader)
