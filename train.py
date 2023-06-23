@@ -42,7 +42,7 @@ train_frame, test_frame, label_mapper, num_classes = extract_data(EXPORT_PATH, T
 
 # %% Generate Weights for train set sampling
 # Get class frequencies
-class_frequencies = train_frame['label_id'].value_counts()
+class_frequencies = dict(zip(train_frame['label_id'], train_frame['class_counts']))
 
 # Calculate weight for each image
 sample_weights = []

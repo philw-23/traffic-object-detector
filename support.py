@@ -5,6 +5,7 @@ import random
 import os
 import transforms as T
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from sklearn.model_selection import train_test_split
 
 # Gets transformations to apply to images/targets
 def get_transforms(train):
@@ -85,27 +86,27 @@ def extract_data(export_path, dataset_tarfile, label_file_name, train_pct=0.8):
 			if member.isfile(): # Skip non file items
 				member.name = os.path.basename(member.name) # Remove path
 				tar.extract(member, export_path)
-		# f = tarfile.open(dataset_tarfile) # Open file
-		# f.extractall(export_path) # Extract to extract location
 
-	# Read in and preprocess data
 	image_data = pd.read_csv(export_path + label_file_name, sep=' ',
-                    names=['frame', 'xmin', 'ymin', 'xmax', 'ymax', 'occluded', 'label', 'light_type'])
+					names=['frame', 'xmin', 'ymin', 'xmax', 'ymax', 'occluded', 'label', 'light_type'])
 	image_data['f_path'] = export_path + image_data['frame'] # Add full file path
-	image_data['light_type'] = image_data['light_type'].fillna('No Attribute') # Treat light color/type as attribute
-	image_data['attribute'] = pd.factorize(image_data['light_type'])[0] # Numeric ID for light type (ignoring for now)
-	image_data['image_id'] = pd.factorize(image_data['frame'])[0] # Unique ID for frame (accessing "codes" object)
-	image_data['label_id'] = pd.factorize(image_data['label'])[0] # Unique ID for full label (accessing "codes" object)
-	label_mapper = dict(zip(image_data['label'], image_data['label_id'])) # For mapping use later
-	num_classes = len(image_data['label'].unique())
+	image_data['label_adjust'] = image_data['label'] + image_data['light_type'].fillna('') # Final labels
+	image_data['label_id'] = pd.factorize(image_data['label_adjust'])[0] # Numeric representation
+	image_data['class_counts'] = image_data['label_id'].map(image_data['label_id'].value_counts()) # Add class counts for weighting purposes
+	min_classes = image_data.loc[image_data.groupby('frame').class_counts.idxmin()] # Get min classes for each image
 
-	# Generate dataframes
-	file_list = image_data['f_path'].unique().tolist() # Unique image list
-	train_len = int(train_pct * len(file_list)) # Number of training images
-	random.Random(1).shuffle(file_list) # Shuffle the list
-	train_files = file_list[:train_len] # Train files
-	test_files = file_list[train_len:] # Test files
-	train_frame = image_data.loc[image_data['f_path'].isin(train_files)] # Train df
-	test_frame = image_data.loc[image_data['f_path'].isin(test_files)] # Test df
+	# Generate Train/Test split
+	train_idxs, test_idxs = train_test_split(
+		min_classes['frame'], test_size=0.15,
+		stratify=min_classes['label_id']
+	)
+
+	# Generate train/test frames
+	train_frame = image_data[image_data['frame'].isin(train_idxs)]
+	test_frame = image_data[image_data['frame'].isin(test_idxs)]
+
+	# Label mapper/num classes for later
+	label_mapper = dict(zip(image_data['label_adjust'], image_data['label_id'])) # For mapping use later
+	num_classes = len(image_data['label_id'].unique())
 
 	return train_frame, test_frame, label_mapper, num_classes
