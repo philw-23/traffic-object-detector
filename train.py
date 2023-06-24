@@ -2,6 +2,7 @@
 import yaml
 import os
 import shutil
+import multiprocessing as mp
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from models import * # Model/optimizer info
 from TrafficDetectorDatasets import * # Custom defined classes
@@ -63,10 +64,15 @@ train_dataset = TrafficDetectorDataset(train_frame, TGT_SIZE, get_transforms(Tru
 test_dataset = TrafficDetectorDataset(test_frame, TGT_SIZE, get_transforms(False))
 
 # %% Create Dataloaders
-trainloader = DataLoader(train_dataset, batch_size=1, sampler=image_sampler,
+cpu_count = mp.cpu_count()
+trainloader = DataLoader(train_dataset, batch_size=1, 
+                         sampler=image_sampler, # sampler replaces shuffle
+                         num_workers=cpu_count, # Use number of CPU cores for workers
                          collate_fn=train_dataset.collate_fn)
-testloader = DataLoader(test_dataset, batch_size=1, shuffle=False,
-                         collate_fn=test_dataset.collate_fn)
+testloader = DataLoader(test_dataset, batch_size=1, 
+                        num_workers=cpu_count,
+                        shuffle=False,
+                        collate_fn=test_dataset.collate_fn)
 
 # %% Train
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -84,13 +90,24 @@ if not os.path.exists(location_name): # Create directory if it doesn't exist
     shutil.copy('./parameters.yml', location_name + '/' + 'parameters.yml')
 
 # %% Define model and callbacks
-checkpoint_log = ModelCheckpoint( # Log best model
+# Best performing model callback
+best_performing_callback = ModelCheckpoint( # Log best model
     monitor='val_loss', # Monitor validation loss
     dirpath=location_name, # Location to write checkpoint
     filename='best-model-epoch{epoch:02d}-' + MODEL + '-' + BACKBONE,
     save_top_k=1, # Only save best model
     mode='min'
 )
+
+# Current epoch callback
+current_epoch_callback = ModelCheckpoint(
+    dirpath=location_name,
+    filename='current-epoch-checkpoint', # Log most current epoch
+    save_top_k=1,
+    every_n_epochs=1
+)
+
+# Early stopping callback
 early_stopper = EarlyStopping( # To prevent overfitting
     monitor='val_loss', # Monitor val loss
     mode='min',
@@ -100,7 +117,15 @@ csv_logger = loggers.CSVLogger(location_name, 'log_file')
 final_model = LightningModel(model, optimizer)
 
 # %% Define trainer and train model
-trainer = Trainer(max_epochs=1,
+# Look for checkpoint
+if os.path.isfile(location_name + '/current-epoch-checkpoint.ckpt'):
+    resume_location = location_name + '/current-epoch-checkpoint.ckpt' # Resume from last completed
+else:
+    resume_location = None # train from scratch
+
+# Train
+trainer = Trainer(max_epochs=NUM_EPOCHS,
                   logger=csv_logger,
-                  callbacks=[checkpoint_log, early_stopper])
-trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader)
+                  callbacks=[best_performing_callback, current_epoch_callback, early_stopper])
+trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader,
+            ckpt_path=resume_location)
