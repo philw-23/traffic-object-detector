@@ -37,12 +37,17 @@ class TrafficDetectorDataset(Dataset):
         # Convert to tensors
         boxes = torch.as_tensor(bboxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
-        
+
+        # Target dict
+        target = {}
+        target['boxes'] = boxes
+        target['labels'] = labels
+
         # Apply transforms
         if self.transforms:
-            image, boxes = self.transforms(image, boxes)
+            image, target = self.transforms(image, target)
         
-        return image, boxes, labels
+        return image, target
     
     def resize_image(self, image):
         resized_image = image.resize(self.target_size)
@@ -69,10 +74,4 @@ class TrafficDetectorDataset(Dataset):
         return len(self.images)
 
     def collate_fn(self, batch):
-
-        images, bboxes, labels = zip(*batch) # Get all batch elements
-        stacked_images = torch.stack([image for image in images]) # Stack images
-        bboxes = [box for box in bboxes] # Note: Don't stack bboxes
-        labels = [label for label in labels] # Note: Don't stack labels
-        
-        return stacked_images, bboxes, labels
+        return tuple(zip(*batch)) # Mirror pytorch utils
