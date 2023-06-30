@@ -65,11 +65,11 @@ test_dataset = TrafficDetectorDataset(test_frame, TGT_SIZE, get_transforms(False
 
 # %% Create Dataloaders
 cpu_count = mp.cpu_count()
-trainloader = DataLoader(train_dataset, batch_size=1, 
+trainloader = DataLoader(train_dataset, batch_size=2, 
                          sampler=image_sampler, # sampler replaces shuffle
                          num_workers=cpu_count, # Use number of CPU cores for workers
                          collate_fn=train_dataset.collate_fn)
-testloader = DataLoader(test_dataset, batch_size=1, 
+testloader = DataLoader(test_dataset, batch_size=2, 
                         num_workers=cpu_count,
                         shuffle=False,
                         collate_fn=test_dataset.collate_fn)
@@ -83,9 +83,14 @@ model, optimizer, lr_scheduler = get_model_items(MODEL, num_classes + 1, OPTIMIZ
                                                  backbone_out_channels=BACKBONE_OUT_CHANNELS)
 
 # Set location for writing outputs
-current_time = datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-location_name = BASE_TRAIN_LOC + '/' + MODEL + '_' + BACKBONE + '_' + current_time
-if not os.path.exists(location_name): # Create directory if it doesn't exist
+location_name = BASE_TRAIN_LOC + '/' + MODEL
+if BACKBONE_SUB: # If we are subsituting backbone
+    location_name = location_name + '_' + BACKBONE + '_' + OPTIMIZER
+else: # Base model
+    location_name = location_name + '_BASE_' + OPTIMIZER
+    
+# Create directory if it doesn't exist
+if not os.path.exists(location_name):
     os.makedirs(location_name)
     shutil.copy('./parameters.yml', location_name + '/' + 'parameters.yml')
 
@@ -94,7 +99,7 @@ if not os.path.exists(location_name): # Create directory if it doesn't exist
 best_performing_callback = ModelCheckpoint( # Log best model
     monitor='val_loss', # Monitor validation loss
     dirpath=location_name, # Location to write checkpoint
-    filename='best-model-epoch{epoch:02d}-' + MODEL + '-' + BACKBONE,
+    filename='best-model-epoch{epoch:02d}',
     save_top_k=1, # Only save best model
     mode='min'
 )
@@ -111,21 +116,26 @@ current_epoch_callback = ModelCheckpoint(
 early_stopper = EarlyStopping( # To prevent overfitting
     monitor='val_loss', # Monitor val loss
     mode='min',
-    patience=3 # Three epochs of patience
+    patience=5 # Five epochs of patience
 )
-csv_logger = loggers.CSVLogger(location_name, 'log_file')
-final_model = LightningModel(model, optimizer)
+csv_logger = loggers.CSVLogger(location_name)
+log_file = location_name + '/log_file.log'
+final_model = LightningModel(model, optimizer, log_file)
 
 # %% Define trainer and train model
 # Look for checkpoint
 if os.path.isfile(location_name + '/current-epoch-checkpoint.ckpt'):
     resume_location = location_name + '/current-epoch-checkpoint.ckpt' # Resume from last completed
+elif os.path.isfile(location_name + '/current-epoch-checkpoint-v1.ckpt'): # Handle -v1 case
+    resume_location = location_name + '/current-epoch-checkpoint-v1.ckpt'
 else:
     resume_location = None # train from scratch
 
 # Train
 trainer = Trainer(max_epochs=NUM_EPOCHS,
                   logger=csv_logger,
+                  enable_progress_bar=True,
+                  detect_anomaly=True,
                   callbacks=[best_performing_callback, current_epoch_callback, early_stopper])
 trainer.fit(final_model, train_dataloaders=trainloader, val_dataloaders=testloader,
             ckpt_path=resume_location)
